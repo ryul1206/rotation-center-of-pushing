@@ -4,12 +4,36 @@ import matplotlib.patches as patches
 import numpy as np
 import shapely.geometry as geom
 
-import tools
 
 """
 CAUTION:
 (X, Y) -> (Y, X)
 """
+
+
+def TmatDotBulk(Tmat, xys):
+    _xys = np.vstack((xys.transpose(), np.ones(xys.shape[0])))
+    res = np.dot(Tmat, _xys)[:-1].transpose()
+    return res
+
+
+def find_2d_line_std_form(p1, p2):
+    a = p2[1] - p1[1]
+    b = p1[0] - p2[0]
+    c = p2[0] * p1[1] - p1[0] * p2[1]
+    return a, b, c
+
+
+def find_intersection_of_2d_lines(line1_std_form, line2_std_form):
+    a1, b1, c1 = line1_std_form
+    a2, b2, c2 = line2_std_form
+    determinant = a1 * b2 - a2 * b1
+    if determinant != 0:
+        x = (b1 * c2 - b2 * c1) / determinant
+        y = (a2 * c1 - a1 * c2) / determinant
+        return (x, y)
+    else:  # Lines are parallel
+        return None
 
 
 def build_static_elements(ax, xlim=(-1, 1), ylim=(-1, 1), tick_interval=0.25):
@@ -58,6 +82,7 @@ class MouseLocationPatch:
         self.cursor.center = event_xy
         is_stable = sr.is_stable_in_local_frame((event_xy[1], event_xy[0]))
         self.cursor.set(color="blue" if is_stable else "red")
+        return is_stable
 
 
 class SliderPatch:
@@ -109,7 +134,7 @@ class AxesLine:
         subplot.add_line(self.yline)
 
     def transformation(self, Tmat):
-        x, o, y = tools.TmatDot(Tmat, self._xoy)
+        x, o, y = TmatDotBulk(Tmat, self._xoy)
         self.xline.set_data((o[1], x[1]), (o[0], x[0]))
         self.yline.set_data((o[1], y[1]), (o[0], y[0]))
 
@@ -250,8 +275,8 @@ class LineConstraintPair:
             if intersect_edges[i]:
                 p1 = vertices[i]
                 p2 = vertices[(i + 1) % 4]
-                edge_std_form = tools.line_from_two_points(p1, p2)
-                xy = tools.intersection_of_two_lines(line.standard_form, edge_std_form)
+                edge_std_form = find_2d_line_std_form(p1, p2)
+                xy = find_intersection_of_2d_lines(line.standard_form, edge_std_form)
                 polygon.append(xy)
                 intersection.append(xy)
         # draw line

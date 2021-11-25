@@ -5,9 +5,9 @@ from matplotlib.gridspec import GridSpec
 from matplotlib.widgets import Slider, Button
 import numpy as np
 
-import stable_region
-import plot_2d_elements as p2d
-import plot_3d_elements as p3d
+from logic import stable_region
+from visualization import plot_2d_elements as p2d
+from visualization import plot_3d_elements as p3d
 
 """
 CAUTION:
@@ -32,12 +32,16 @@ class PlotManager:
         p2d.build_static_elements(self.axL, xlim, ylim, interval)
         self.elem_slider = p2d.SliderPatch(self.axL)
         self.elem_constraints = p2d.ConstraintsPatch(self.axL, xlim, ylim)
-        self.elem_mouse = p2d.MouseLocationPatch(self.axL)
+        self.elem_mouse2d = p2d.MouseLocationPatch(self.axL)
         self._draw_stable_region()  # Initial drawing
 
         # ======= RIGTH FIGURES =======
         axR = fig.add_subplot(gs[1], projection="3d")
+        axR.azim = 4  # deg
+        axR.elev = 21  # deg
         p3d.build_static_elements(axR)
+        self.last_cursor_event_xy = (0, 0)
+        self.elem_mouse3d = p3d.MouseLocationPatch(axR)
 
         # ======= WIDGETS =======
         # ax = plt.axes([left, bottom, width, height])
@@ -74,8 +78,15 @@ class PlotManager:
             <class 'matplotlib.axes._subplots.Axes3DSubplot'>.
         """
         if isinstance(event.inaxes, self.axL.__class__):
-            self.elem_mouse.update((event.xdata, event.ydata), self.sr)
+            self.last_cursor_event_xy = (event.xdata, event.ydata)
+            self._update_last_cursor()
             plt.draw()
+
+    def _update_last_cursor(self):
+        is_stable = self.elem_mouse2d.update(self.last_cursor_event_xy, self.sr)
+        self.elem_mouse3d.update(
+            self.last_cursor_event_xy, self.sr.local_centroid, is_stable
+        )
 
     def _draw_stable_region(self):
         self.elem_slider.update(self.sr)
@@ -107,6 +118,7 @@ class PlotManager:
     def _close_update(self):
         """No logic HERE! Only drawing"""
         self._draw_stable_region()
+        self._update_last_cursor()
         plt.draw()
 
 

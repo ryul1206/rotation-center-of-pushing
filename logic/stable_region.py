@@ -1,5 +1,6 @@
+# -*- coding: utf-8 -*-
 import numpy as np
-from tools import polygon_centroid, Rmat2D, Tmat2D, TmatDot
+from .tools import polygon_centroid, Rmat2D, Tmat2D, TmatDot, TmatDotBulk
 
 
 def unit(rad):
@@ -128,7 +129,7 @@ class StableRegion:
         self._input_local_R = Rmat2D(rad)
 
         # Pusher coordinates
-        self._local_xy_points = TmatDot(self._local_input_T, self._xy_points)
+        self._local_xy_points = TmatDotBulk(self._local_input_T, self._xy_points)
         # self._local_centroid = polygon_centroid(self._local_xy_points)
         self._local_centroid = TmatDot(self._local_input_T, self._centroid)
         self._local_lsupport = TmatDot(self._local_input_T, input_lsupport)
@@ -155,7 +156,6 @@ class StableRegion:
                 self._cond_WR1.is_stable(local_xy),
                 self._cond_WR2.is_stable(local_xy),
             )
-            print(conditions)
         else:  # Left-hand ICR
             conditions = (
                 self._cond_FL1.is_stable(local_xy),

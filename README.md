@@ -1,14 +1,15 @@
 # Rotation Center of Stable Pushing with Line Contact
 
-## Dependancies
+### Dependancies
 
-- Stable region algorithm:
-  - numpy>=1.16.6
-- Interactive Visualization:
+- Stable region algorithm (py2, py3)
+  - numpy
+- Interactive Visualization (py3 only)
+  - numpy
   - matplotlib>=3.1.1
-  - shapely>=1.8
+  - shapely
 
-## References
+### References
 
 - Circular sampling
 - Stable pushing: https://www.cs.cmu.edu/~./mlab/stable/
