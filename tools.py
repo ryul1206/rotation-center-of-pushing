@@ -1,13 +1,38 @@
 import numpy as np
 
 
+def line_from_two_points(p1, p2):
+    a = p2[1] - p1[1]
+    b = p1[0] - p2[0]
+    c = p2[0] * p1[1] - p1[0] * p2[1]
+    return a, b, c
+
+
+def intersection_of_two_lines(line1_std_form, line2_std_form):
+    a1, b1, c1 = line1_std_form
+    a2, b2, c2 = line2_std_form
+    determinant = a1 * b2 - a2 * b1
+    if determinant != 0:
+        x = (b1 * c2 - b2 * c1) / determinant
+        y = (a2 * c1 - a1 * c2) / determinant
+        return (x, y)
+    else:  # Lines are parallel
+        return None
+
+
+def Rmat2D(rad):
+    c = np.cos(rad)
+    s = np.sin(rad)
+    return np.array([[c, -s], [s, c]])
+
+
 def Tmat2D(rad, x_trans, y_trans):
     c = np.cos(rad)
     s = np.sin(rad)
     return np.array([[c, -s, x_trans], [s, c, y_trans], [0, 0, 1]])
 
 
-def TmatDot(Tmat, xys):
+def TmatDot(Tmat, xys, debug=False):
     is_single = len(xys.shape) == 1
     if is_single:
         xys = xys.reshape(1, -1)

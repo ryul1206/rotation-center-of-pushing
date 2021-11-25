@@ -1,5 +1,5 @@
 import numpy as np
-from tools import polygon_centroid, Tmat2D, TmatDot
+from tools import polygon_centroid, Rmat2D, Tmat2D, TmatDot
 
 
 def unit(rad):
@@ -15,11 +15,12 @@ class StableRegion:
         self._line_contact_cases = None
         self._current_contact = None
         self._centroid = None  # Center of friction
-        # foward_vector = (1, 0)
+        # self._foward_vector = np.array((1, 0))
 
         # Transformation
         self._local_input_T = None
         self._input_local_T = None
+        self._input_local_R = None
 
         self._mu = default_mu
 
@@ -56,6 +57,14 @@ class StableRegion:
         return self._local_input_T
 
     @property
+    def local_input_Rmat(self):
+        return self._input_local_R.transpose()
+
+    @property
+    def local_forward_vector(self):
+        return np.dot(self.local_input_Rmat, np.array((1, 0)))
+
+    @property
     def local_xy_points(self):
         return self._local_xy_points
 
@@ -89,11 +98,11 @@ class StableRegion:
         if not isinstance(xy_points_in_clockwise, np.ndarray):
             xy_points_in_clockwise = np.array(xy_points_in_clockwise)
         self._xy_points = xy_points_in_clockwise
-        self._line_contact_cases = len(self._xy_points)
-        self.set_current_contact(0)
-
         # Friction center (cof) == center of gravity (centroid)
         self._centroid = polygon_centroid(self._xy_points)
+
+        self._line_contact_cases = len(self._xy_points)
+        self.set_current_contact(0)
 
         # Stable conditions
         self._init_stable_conditions()
@@ -116,10 +125,12 @@ class StableRegion:
         # Set pusher coordinates
         self._input_local_T = Tmat2D(rad, *input_localOrigin)
         self._local_input_T = np.linalg.inv(self._input_local_T)
+        self._input_local_R = Rmat2D(rad)
 
         # Pusher coordinates
         self._local_xy_points = TmatDot(self._local_input_T, self._xy_points)
-        self._local_centroid = polygon_centroid(self._local_xy_points)
+        # self._local_centroid = polygon_centroid(self._local_xy_points)
+        self._local_centroid = TmatDot(self._local_input_T, self._centroid)
         self._local_lsupport = TmatDot(self._local_input_T, input_lsupport)
         self._local_rsupport = TmatDot(self._local_input_T, input_rsupport)
 
@@ -132,13 +143,36 @@ class StableRegion:
         self._mu = mu
         self.update_friction_cone_stable()
 
+    def update_shape(self):
+        self.update_friction_cone_stable()
+        self.update_wrench_stable()
+
+    def is_stable_in_local_frame(self, local_xy):
+        if local_xy[1] < 0.0:  # Right-hand ICR
+            conditions = (
+                self._cond_FR1.is_stable(local_xy),
+                self._cond_FR2.is_stable(local_xy),
+                self._cond_WR1.is_stable(local_xy),
+                self._cond_WR2.is_stable(local_xy),
+            )
+            print(conditions)
+        else:  # Left-hand ICR
+            conditions = (
+                self._cond_FL1.is_stable(local_xy),
+                self._cond_FL2.is_stable(local_xy),
+                self._cond_WL1.is_stable(local_xy),
+                self._cond_WL2.is_stable(local_xy),
+            )
+        is_stable = all(conditions)
+        return is_stable
+
     def _init_stable_conditions(self):
         """
         Reference: Page 159 of "Mechanics of robotic mnaipulation"
         (M. T. Mason, Mechanics of robotic manipulation. Cambridge, Mass: MIT Press, 2001.)
         """
         """
-        # 1: Friction cone condition (mu dependent)
+        # 1: Friction cone condition (mu & shape dependent)
         -------------------------------------------------
         Left-hand ICR is stable if:
             y>= left cone의 -alpha (x=상수꼴이면 queryX<=x)
@@ -164,7 +198,11 @@ class StableRegion:
             y<= `(현재)left cone->centroid`방향, centroid에서 r^2/p 거리 (x=상수꼴이면 queryX>=x)
             y<= right cone과 centroid 사이의 수직이등분선 (x=상수꼴이면 queryX<=x)
         """
-        # self.
+        self._cond_WL1 = LineConstraint(greater_than_y=True, greater_than_x=False)
+        self._cond_WL2 = LineConstraint(greater_than_y=True, greater_than_x=True)
+        self._cond_WR1 = LineConstraint(greater_than_y=False, greater_than_x=True)
+        self._cond_WR2 = LineConstraint(greater_than_y=False, greater_than_x=False)
+        self.update_wrench_stable()
 
     def update_friction_cone_stable(self):
         # Friction cone slope: m = tan(alpha) = friction coefficient mu
@@ -194,6 +232,55 @@ class StableRegion:
                 farthest_point = xy
                 farthest_dot = dot
         return farthest_point
+
+    def update_wrench_stable(self):
+        # Passpoint and angle_rad of Perpendicular bisectors
+        # Wrench Left 1 (left-cone, centroid)
+        lper = self._perpendicular_bisector(self._local_lsupport, self._local_centroid)
+        self._cond_WL1.update(lper[0], lper[1])
+        # Wrench Right 2 (right-cone, centroid)
+        rper = self._perpendicular_bisector(self._local_rsupport, self._local_centroid)
+        self._cond_WR2.update(rper[0], rper[1])
+
+        # Passpoint and angle_rad of Farpoint Lines
+        _ldiff = self._local_centroid - self._local_lsupport
+        _rdiff = self._local_centroid - self._local_rsupport
+        _ldiff_sqdist = np.dot(_ldiff, _ldiff)
+        _rdiff_sqdist = np.dot(_rdiff, _rdiff)
+        _r_square = max(_ldiff_sqdist, _rdiff_sqdist)
+        # Wrench Right 1 (left-cone -> centroid -> line)
+        """
+        _ldiff_length = np.sqrt(_ldiff_sqdist)
+        _dist = _r_square / _ldiff_length  # r^2 / p
+        dxy = unit_vector * _dist  # dxy_from_centroid
+            = (_ldiff / _ldiff_length) * _dist
+        -----------------------------
+        This is the same as below:
+        dxy = (_ldiff / _ldiff_length) * (_r_square / _ldiff_length)
+        dxy = _ldiff * (_r_square / _ldiff_sqdist)
+        """
+        dxy = (_r_square / _ldiff_sqdist) * _ldiff
+        farpoint1 = self._local_centroid + dxy
+        self._cond_WR1.update(farpoint1, lper[1])
+        # Wrench Left 2 (right -> centroid -> line)
+        dxy = (_r_square / _rdiff_sqdist) * _rdiff
+        farpoint2 = self._local_centroid + dxy
+        self._cond_WL2.update(farpoint2, rper[1])
+
+    def _perpendicular_bisector(self, point1, point2):
+        """
+        point1, point2: 2 points in local frame
+        ---
+        Return the perpendicular bisector of the line segment between point1 and point2.
+        => (pass_point, angle_rad)
+        """
+        direction = point2 - point1
+        # +90 degree is
+        # rotated = np.array([-direction[1], direction[0]])
+        slope = -direction[0] / direction[1]
+        angle_rad = np.arctan(slope)
+        pass_point = (point1 + point2) / 2.0
+        return (pass_point, angle_rad)
 
 
 class LineConstraint:
