@@ -50,9 +50,6 @@ def build_static_elements(ax):
     ax.plot([0, _axes_length], [0, 0], [0, 0], color="red", linewidth=_axes_width)
     ax.plot([0, 0], [0, _axes_length], [0, 0], color="green", linewidth=_axes_width)
     ax.plot([0, 0], [0, 0], [0, _axes_length], color="blue", linewidth=_axes_width)
-    # arrow3d(ax, theta_x=-90, theta_z=0, offset=(0, -1.1, 0), color="black", alpha=0.5)
-    # arrow3d(ax, theta_x=-90, theta_z=-90, offset=(-1.1, 0, 0), color="black", alpha=0.5)
-    # arrow3d(ax, theta_x=0, theta_z=0, offset=(0, 0, -1.1), color="black", alpha=0.5)
 
     # Make axes limits
     xyzlim = np.array([ax.get_xlim3d(), ax.get_ylim3d(), ax.get_zlim3d()]).T
@@ -108,63 +105,6 @@ def build_static_elements(ax):
     ax.set_zlabel(r"$\omega$ [rad]", rotation=0)
 
 
-"""
-def arrow3d(
-    ax,
-    length=2.3,
-    width=0.005,
-    head=0.05,
-    headwidth=3,
-    theta_x=0,
-    theta_z=0,
-    offset=(0, 0, 0),
-    **kw
-):
-    w = width
-    h = head
-    hw = headwidth
-    theta_x = np.deg2rad(theta_x)
-    theta_z = np.deg2rad(theta_z)
-
-    a = [
-        [0, 0],
-        [w, 0],
-        [w, (1 - h) * length],
-        [hw * w, (1 - h) * length],
-        [0, length],
-    ]
-    a = np.array(a)
-
-    r, theta = np.meshgrid(a[:, 0], np.linspace(0, 2 * np.pi, 30))
-    z = np.tile(a[:, 1], r.shape[0]).reshape(r.shape)
-    x = r * np.sin(theta)
-    y = r * np.cos(theta)
-
-    rot_x = np.array(
-        [
-            [1, 0, 0],
-            [0, np.cos(theta_x), -np.sin(theta_x)],
-            [0, np.sin(theta_x), np.cos(theta_x)],
-        ]
-    )
-    rot_z = np.array(
-        [
-            [np.cos(theta_z), -np.sin(theta_z), 0],
-            [np.sin(theta_z), np.cos(theta_z), 0],
-            [0, 0, 1],
-        ]
-    )
-
-    b1 = np.dot(rot_x, np.c_[x.flatten(), y.flatten(), z.flatten()].T)
-    b2 = np.dot(rot_z, b1)
-    b2 = b2.T + np.array(offset)
-    x = b2[:, 0].reshape(r.shape)
-    y = b2[:, 1].reshape(r.shape)
-    z = b2[:, 2].reshape(r.shape)
-    ax.plot_surface(x, y, z, **kw)
-"""
-
-
 class Line3D:
     def __init__(self, subplot, linewidth=1.0, color="black", alpha=1.0):
         # xs, ys, zs
@@ -176,9 +116,9 @@ class Line3D:
 
 class MouseLocationPatch:
     def __init__(self, subplot):
-        dot_size = 0.02
+        dot_size = 0.015
         samples = np.linspace(0, 2 * np.pi, 10)
-        self.dot_verts = np.array(
+        self.dot_verts = np.array(  # [[xs], [ys], [zs]]
             [
                 np.cos(samples) * dot_size,
                 np.sin(samples) * dot_size,
@@ -201,17 +141,14 @@ class MouseLocationPatch:
         y_from_centroid < 0: Right-hand side (CW, z-axis = -1)
         """
         # Position of the dot
+        # dxyz is on the pusher fame! Not on the slider centroid!
         local_x, local_y = (event_xy[1], event_xy[0])
-        x_from_centroid = local_x - local_centroid[0]
-        y_from_centroid = local_y - local_centroid[1]
-        is_top = y_from_centroid > 0
-        dxyz = (
-            ([y_from_centroid], [-x_from_centroid], [1])
-            if is_top
-            else ([-y_from_centroid], [x_from_centroid], [-1])
+        is_top = local_y > 0
+        dxyz = np.array(
+            ([local_y], [-local_x], [1]) if is_top else ([-local_y], [local_x], [-1])
         )
-        point_verts = self.dot_verts + dxyz
-        self.cursor_dot.set_data_3d(*point_verts)
+        point_on_plane = self.dot_verts + dxyz
+        self.cursor_dot.set_data_3d(*point_on_plane)
         # Position of the dot on the sphere
         """  x^2 + y^2 + z^2 = 1
         x = dxyz[0] * k
@@ -220,26 +157,47 @@ class MouseLocationPatch:
         ----
         k^2 * (dxyz[0]^2 + dxyz[1]^2 + dxyz[2]^2) = 1
         """
-        k = 1.0 / np.sqrt(dxyz[0] ** 2 + dxyz[1] ** 2 + dxyz[2] ** 2)
+        # np.sqrt(dxyz[0][0] ** 2 + dxyz[1][0] ** 2 + dxyz[2][0] ** 2) >= 1.0
+        k = 1.0 / np.sqrt(dxyz[0][0] ** 2 + dxyz[1][0] ** 2 + dxyz[2][0] ** 2)
         xyz_on_sphere = dxyz * k
         """
-        (xyz_on_sphere)
-        | z
-        ----sqrt(x^2 + y^2)-----(origin)
+        origin_P = origin_target_T *  target_P
+        origin_target_T = T[[Rz(azimuth)*Ry(HALF_PI - elevation), xyz_on_sphere], [0, 0, 0, 1]]
+        Rz(a) = [
+            [cos(a), -sin(a), 0],
+            [sin(a), cos(a), 0],
+            [0, 0, 1]
+        ]
+        Ry(b) = [
+            [cos(b), 0, sin(b)],
+            [0, 1, 0],
+            [-sin(b), 0, cos(b)]
+        ]
+        Rz(a)*Ry(b) = [
+            [cos(a)*cos(b), -sin(a), cos(a)*sin(b)],
+            [sin(a)*cos(b), cos(a), sin(a)*sin(b)],
+            [-sin(b), 0, cos(b)]
+        ]
         """
         azimuth = np.arctan2(xyz_on_sphere[1], xyz_on_sphere[0])
         elevation = np.arctan2(
             xyz_on_sphere[2], np.sqrt(xyz_on_sphere[0] ** 2 + xyz_on_sphere[1] ** 2)
         )
-        # Rmat =
-        # TODO
 
-        point_verts = self.dot_verts * k + dxyz
-        self.cursor_dot_on_sphere.set_data_3d(*point_verts)
-        # Position of the line
-        self.cursor_line.set_data_3d(
-            (0, local_x), (0, local_y), (0, 0), linewidth=1.0, color="black"
+        def RzRy(azimuth, elevation):
+            ca = np.cos(azimuth)
+            sa = np.sin(azimuth)
+            cb = np.cos(elevation)
+            sb = np.sin(elevation)
+            return np.array(
+                [[ca * cb, -sa, ca * sb], [sa * cb, ca, sa * sb], [-sb, 0, cb]],
+                dtype=np.float32,
+            )
+
+        point_on_sphere = (
+            np.dot(RzRy(azimuth, HALF_PI - elevation), self.dot_verts) + xyz_on_sphere
         )
+        self.cursor_dot_on_sphere.set_data_3d(*point_on_sphere)
 
         # Position of the line
         """ Line in 3D

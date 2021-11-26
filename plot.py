@@ -1,6 +1,6 @@
 #!/usr/bin/python3
-import matplotlib
 import matplotlib.pyplot as plt
+from matplotlib.backend_bases import MouseButton
 from matplotlib.gridspec import GridSpec
 from matplotlib.widgets import Slider, Button
 import numpy as np
@@ -19,7 +19,7 @@ class PlotManager:
     def __init__(self, stable_region):
         self.sr = stable_region
 
-        fig = plt.figure(figsize=(14, 8))
+        fig = plt.figure(figsize=(16, 8))
         fig.suptitle("Stable Region of Rotation Center for Pushing")
         gs = GridSpec(1, 2, width_ratios=[7, 5])
 
@@ -37,16 +37,17 @@ class PlotManager:
 
         # ======= RIGTH FIGURES =======
         axR = fig.add_subplot(gs[1], projection="3d")
-        axR.azim = 4  # deg
-        axR.elev = 21  # deg
+        axR.azim = 30  # deg
+        axR.elev = 30  # deg
         p3d.build_static_elements(axR)
         self.last_cursor_event_xy = (0, 0)
+        self.is_cursor_locked = False
         self.elem_mouse3d = p3d.MouseLocationPatch(axR)
 
         # ======= WIDGETS =======
         # ax = plt.axes([left, bottom, width, height])
         self.friction_slider = Slider(
-            ax=plt.axes([0.2, 0.08, 0.3, 0.03]),
+            ax=plt.axes([0.2, 0.09, 0.3, 0.04]),
             label=r"Input $\alpha$ [deg] (Friction $\mu=\tan(\alpha)$)",
             valmin=0.0,
             valmax=90.0,
@@ -54,23 +55,37 @@ class PlotManager:
         )
         self.friction_slider.on_changed(self._update_friction)
 
-        box = plt.axes([0.4, 0.02, 0.07, 0.04])
+        box = plt.axes([0.4, 0.03, 0.07, 0.04])
         reset_button = Button(box, "Reset All", hovercolor="0.95")
         reset_button.on_clicked(self._reset)
 
-        box = plt.axes([0.22, 0.02, 0.05, 0.04])
+        box = plt.axes([0.26, 0.03, 0.05, 0.04])
         ccw_button = Button(box, "<< CCW", hovercolor="0.90")
         ccw_button.on_clicked(self._rotate_slider_ccw)
 
-        box = plt.axes([0.28, 0.02, 0.05, 0.04])
+        box = plt.axes([0.32, 0.03, 0.05, 0.04])
         cw_button = Button(box, "CW >>", hovercolor="0.90")
         cw_button.on_clicked(self._rotate_slider_cw)
 
+        # ======= EVENTS =======
+        box = plt.axes([0.05, 0.03, 0.035, 0.04])
+        box.set_axis_off()
+        box.text(0, 0.9, "Click in the left figure to (un)lock the cursor.")
+        self.cursor_lock_caution = box.text(
+            0,
+            0,
+            "Cursor Locked",
+            color="red",
+            visible=False,
+            fontsize=20,
+            fontweight="bold",
+        )
+        plt.connect("motion_notify_event", self._on_mouse_move)
+        plt.connect("button_press_event", self._on_mouse_click)
         plt.tight_layout(rect=[0, 0.03, 1, 1.05])
-        plt.connect("motion_notify_event", self._mouse_update)
         plt.show()
 
-    def _mouse_update(self, event):
+    def _on_mouse_move(self, event):
         """
         When your mouse is on the left figure, event.inaxes is
             <class 'matplotlib.axes._subplots.AxesSubplot'>.
@@ -78,15 +93,27 @@ class PlotManager:
             <class 'matplotlib.axes._subplots.Axes3DSubplot'>.
         """
         if isinstance(event.inaxes, self.axL.__class__):
-            self.last_cursor_event_xy = (event.xdata, event.ydata)
-            self._update_last_cursor()
-            plt.draw()
+            if not self.is_cursor_locked:
+                self.last_cursor_event_xy = (event.xdata, event.ydata)
+                print(
+                    "Cursor (x: {:.3f}, y: {:.3f})".format(*self.last_cursor_event_xy)
+                )
+                self._update_last_cursor()
+                plt.draw()
+
+    def _on_mouse_click(self, event):
+        if isinstance(event.inaxes, self.axL.__class__):
+            if event.button is MouseButton.LEFT:
+                self.is_cursor_locked = not self.is_cursor_locked
+                self.cursor_lock_caution.set_visible(self.is_cursor_locked)
+                plt.draw()
 
     def _update_last_cursor(self):
         is_stable = self.elem_mouse2d.update(self.last_cursor_event_xy, self.sr)
         self.elem_mouse3d.update(
             self.last_cursor_event_xy, self.sr.local_centroid, is_stable
         )
+        plt.draw()
 
     def _draw_stable_region(self):
         self.elem_slider.update(self.sr)
@@ -125,7 +152,14 @@ class PlotManager:
 if __name__ == "__main__":
     sr = stable_region.StableRegion(default_mu=0.5)
 
-    input_points = [(-0.1, -0.1), (-0.1, 0.3), (0.4, 0.3), (0.4, 0.1), (0.2, -0.1)]
+    input_points = [
+        (-0.1, -0.1),
+        (-0.12, 0.1),
+        (0.0, 0.3),
+        (0.4, 0.3),
+        (0.4, 0.1),
+        (0.2, -0.1),
+    ]
     # If points are in clockwise order, pusher will head opposite direction (from inside).
     # input_points.reverse()
     slider = np.array(input_points)

@@ -237,14 +237,14 @@ class StableRegion:
         # Passpoint and angle_rad of Perpendicular bisectors
         # Wrench Left 1 (left-cone, centroid)
         lper = self._perpendicular_bisector(self._local_lsupport, self._local_centroid)
-        self._cond_WL1.update(lper[0], lper[1])
+        self._cond_WL1.update(*lper)
         # Wrench Right 2 (right-cone, centroid)
         rper = self._perpendicular_bisector(self._local_rsupport, self._local_centroid)
-        self._cond_WR2.update(rper[0], rper[1])
+        self._cond_WR2.update(*rper)
 
         # Passpoint and angle_rad of Farpoint Lines
-        _ldiff = self._local_centroid - self._local_lsupport
-        _rdiff = self._local_centroid - self._local_rsupport
+        _ldiff = self._local_centroid - self._local_lsupport  # != 0
+        _rdiff = self._local_centroid - self._local_rsupport  # != 0
         _ldiff_sqdist = np.dot(_ldiff, _ldiff)
         _rdiff_sqdist = np.dot(_rdiff, _rdiff)
         _r_square = max(_ldiff_sqdist, _rdiff_sqdist)
@@ -261,11 +261,11 @@ class StableRegion:
         """
         dxy = (_r_square / _ldiff_sqdist) * _ldiff
         farpoint1 = self._local_centroid + dxy
-        self._cond_WR1.update(farpoint1, lper[1])
+        self._cond_WR1.update(farpoint1, lper[1])  # passpoint, angle
         # Wrench Left 2 (right -> centroid -> line)
         dxy = (_r_square / _rdiff_sqdist) * _rdiff
         farpoint2 = self._local_centroid + dxy
-        self._cond_WL2.update(farpoint2, rper[1])
+        self._cond_WL2.update(farpoint2, rper[1])  # passpoint, angle
 
     def _perpendicular_bisector(self, point1, point2):
         """
@@ -277,8 +277,12 @@ class StableRegion:
         direction = point2 - point1
         # +90 degree is
         # rotated = np.array([-direction[1], direction[0]])
-        slope = -direction[0] / direction[1]
-        angle_rad = np.arctan(slope)
+        # slope = -direction[0] / direction[1]
+        angle_rad = (
+            np.arctan(-direction[0] / direction[1])
+            if direction[1] != 0
+            else self.HALF_PI
+        )
         pass_point = (point1 + point2) / 2.0
         return (pass_point, angle_rad)
 
