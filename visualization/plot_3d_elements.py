@@ -96,6 +96,10 @@ def build_static_elements(ax):
     ax.plot([0, 0], [0, _axes_length], [-1, -1], color="red", linewidth=_axes_width)
     ax.plot([0, -_axes_length], [0, 0], [-1, -1], color="green", linewidth=_axes_width)
 
+    # Annotations
+    ax.text(1, -1, 1, "CCW ICR", (0, 1, 0))
+    ax.text(1, -1, -1, "CW ICR", (0, 1, 0))
+
     # Label
     # ax.xaxis.set_rotate_label(False)
     # ax.yaxis.set_rotate_label(False)
@@ -156,9 +160,10 @@ class MouseLocationPatch:
         z = dxyz[2] * k
         ----
         k^2 * (dxyz[0]^2 + dxyz[1]^2 + dxyz[2]^2) = 1
+        dxyz[2] == 1
         """
         # np.sqrt(dxyz[0][0] ** 2 + dxyz[1][0] ** 2 + dxyz[2][0] ** 2) >= 1.0
-        k = 1.0 / np.sqrt(dxyz[0][0] ** 2 + dxyz[1][0] ** 2 + dxyz[2][0] ** 2)
+        k = 1.0 / np.sqrt(dxyz[0][0] ** 2 + dxyz[1][0] ** 2 + 1.0)
         xyz_on_sphere = dxyz * k
         """
         origin_P = origin_target_T *  target_P
