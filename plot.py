@@ -33,16 +33,20 @@ class PlotManager:
         self.elem_slider = p2d.SliderPatch(self.axL)
         self.elem_constraints = p2d.ConstraintsPatch(self.axL, xlim, ylim)
         self.elem_mouse2d = p2d.MouseLocationPatch(self.axL)
-        self._draw_stable_region()  # Initial drawing
 
         # ======= RIGTH FIGURES =======
-        axR = fig.add_subplot(gs[1], projection="3d")
-        axR.azim = 30  # deg
-        axR.elev = 30  # deg
-        p3d.build_static_elements(axR)
+        self.initial_azim_elev = (30, 30)  # deg
+        self.axR = fig.add_subplot(gs[1], projection="3d")
+        self.axR.azim = self.initial_azim_elev[0]
+        self.axR.elev = self.initial_azim_elev[1]
+        p3d.build_static_elements(self.axR)
+        self.elem_constraints3d = p3d.ConstraintsPatch3D(self.axR)
         self.last_cursor_event_xy = (0, 0)
         self.is_cursor_locked = False
-        self.elem_mouse3d = p3d.MouseLocationPatch(axR)
+        self.elem_mouse3d = p3d.MouseLocationPatch(self.axR)
+
+        # Initial drawing
+        self._close_update()
 
         # ======= WIDGETS =======
         # ax = plt.axes([left, bottom, width, height])
@@ -113,11 +117,6 @@ class PlotManager:
         self.elem_mouse3d.update(
             self.last_cursor_event_xy, self.sr.local_centroid, is_stable
         )
-        plt.draw()
-
-    def _draw_stable_region(self):
-        self.elem_slider.update(self.sr)
-        self.elem_constraints.update(self.sr)
 
     def _update_friction(self, val):
         mu = np.tan(np.radians(self.friction_slider.val))
@@ -125,6 +124,8 @@ class PlotManager:
         self._close_update()
 
     def _reset(self, event):
+        self.axR.azim = self.initial_azim_elev[0]
+        self.axR.elev = self.initial_azim_elev[1]
         self.friction_slider.reset()
         self.sr.set_current_contact(0)
         self.sr.update_shape()
@@ -144,7 +145,9 @@ class PlotManager:
 
     def _close_update(self):
         """No logic HERE! Only drawing"""
-        self._draw_stable_region()
+        self.elem_slider.update(self.sr)
+        self.elem_constraints.update(self.sr)
+        self.elem_constraints3d.update(self.sr)
         self._update_last_cursor()
         plt.draw()
 

@@ -109,13 +109,199 @@ def build_static_elements(ax):
     ax.set_zlabel(r"$\omega$ [rad]", rotation=0)
 
 
-class Line3D:
-    def __init__(self, subplot, linewidth=1.0, color="black", alpha=1.0):
+class ConstraintsPatch3D:
+    def __init__(self, subplot):
+        self.elem_FL = LineConstraintPair3D(subplot, True, "green", linewidth=1.0)
+        self.elem_FR = LineConstraintPair3D(subplot, False, "green", linewidth=1.0)
+        self.elem_WL = LineConstraintPair3D(subplot, True, "red", linewidth=1.0)
+        self.elem_WR = LineConstraintPair3D(subplot, False, "red", linewidth=1.0)
+
+    def update(self, sr):
+        """
+        sr: An instance of the class stable_region.StableRegion
+        """
+        # (1) Friction cone condition
+        fl1, fl2, fr1, fr2 = sr.stable_constraints_of_friction
+        self.elem_FL.update(fl1, fl2, True, False)
+        self.elem_FR.update(fr1, fr2, False, True)
+        # (2) Non-prehensile condition
+        wl1, wl2, wr1, wr2 = sr.stable_constraints_of_wrench
+        self.elem_WL.update(wl1, wl2, True, False)
+        self.elem_WR.update(wr1, wr2, False, True)
+
+
+class LineConstraintPair3D:
+    def __init__(self, subplot, is_ccw_plane, color, linewidth=1.0):
+        self.plus_if_ccw_else_minus = 1.0 if is_ccw_plane else -1.0
+        self.minus_if_ccw_else_plus = -1.0 if is_ccw_plane else 1.0
         # xs, ys, zs
-        self.line = art3d.Line3D(
-            (0, 0), (0, 0), (0, 0), linewidth=linewidth, color=color, alpha=alpha
+        self.line_on_sphere = art3d.Line3D(
+            (0, 0), (0, 0), (0, 0), linewidth=linewidth, color=color
         )
-        subplot.add_line(self.line)
+        subplot.add_line(self.line_on_sphere)
+
+        self._n = 30
+        self._xs = np.zeros(self._n * 3 + 1)
+        self._ys = np.zeros(self._n * 3 + 1)
+        self._zs = np.zeros(self._n * 3 + 1)
+        self._sphere_xs = np.zeros(self._n * 3 + 1)
+        self._sphere_ys = np.zeros(self._n * 3 + 1)
+
+    @staticmethod
+    def _find_infinite_point(slope_m, direction=True):
+        """
+        - slope_m: slope of the line (m = -a / b) (ax + by + c = 0)
+        - direction: True if the infinite point is on the positive side of the line.
+        """
+        rad = np.arctan(slope_m)
+        if direction:
+            return np.array([np.cos(rad), np.sin(rad), 0])
+        else:
+            return np.array([-np.cos(rad), -np.sin(rad), 0])
+
+    def _plane_xy_to_sphere_xyz(self, x, y):
+        k = 1.0 / np.sqrt(x ** 2 + y ** 2 + 1.0)
+        _x = x * k
+        _y = y * k
+        _z = k * self.plus_if_ccw_else_minus
+        return np.array([_x, _y, _z])
+
+    def update(self, line1, line2, direction1, direction2):
+        """
+        direction: True if the infinite point is on the positive side of the line.
+        -----------------
+        FL (Left-hand ICR)
+            fl1: y>= left cone의 -alpha (x=상수꼴이면 queryX<=x)
+            fl2: y>= right cone의 alpha + 떨어진점 (x=상수꼴이면 queryX>=x)
+        FR (Right-hand ICR)
+            fr1: y<= left cone의 -alpha + 떨어진점 (x=상수꼴이면 queryX>=x)
+            fr2: y<= right cone의 alpha (x=상수꼴이면 queryX<=x)
+        WL (Left-hand ICR)
+            wl1: y>= left cone과 centroid 사이의 수직이등분선 (x=상수꼴이면 queryX<=x)
+            wl2: y>= `(현재)right cone->centroid`방향, centroid에서 r^2/p 거리 (x=상수꼴이면 queryX>=x)
+        WR (Right-hand ICR)
+            wr1: y<= `(현재)left cone->centroid`방향, centroid에서 r^2/p 거리 (x=상수꼴이면 queryX>=x)
+            wr2: y<= right cone과 centroid 사이의 수직이등분선 (x=상수꼴이면 queryX<=x)
+        -----------------
+            [a1 b1][x] = [-c1]
+            [a2 b2][y]   [-c2]
+        Case1: (determinant != 0) One intersection point exists
+        Case2: (a == 0 => determinant == 0) No intersection point, Overlap region.
+        Case3: (b == 0 => determinant == 0) No intersection point, No overlap
+        * Now, (a!=0, b!=0, determinant==0) is not possible.
+        """
+        a1, b1, c1 = line1.standard_form
+        a2, b2, c2 = line2.standard_form
+        determinant = a1 * b2 - a2 * b1
+        if determinant != 0:
+            # One Intersetion point
+            plane_x = (b1 * c2 - b2 * c1) / determinant
+            plane_y = (a2 * c1 - a1 * c2) / determinant
+            # (1st point) Intersection on the sphere
+            # (2nd point) Infinite point of line1
+            # (3rd point) Infinite point of line2
+            itsc_xyz = self._plane_xy_to_sphere_xyz(plane_x, plane_y)
+            inf1_xyz = self._find_infinite_point(-a1 / b1, direction1)
+            inf2_xyz = self._find_infinite_point(-a2 / b2, direction2)
+        elif a1 == 0:
+            # Case2 (Overlap region)
+            # Two lines are parallel. (b1y + c1 = 0) (b2y + c2 = 0)
+            _y1 = -c1 / b1
+            _y2 = -c2 / b2
+            """
+            (l1.greater_than_y), (_y2 > _y1)
+                T, T => _y2 (xor F)
+                T, F => _y1 (xor T)
+                F, T => _y1 (xor T)
+                F, F => _y2 (xor F)
+            """
+            xor = (line1.greater_than_y) ^ (_y2 > _y1)
+            itsc_xyz = self._plane_xy_to_sphere_xyz(0, _y1 if xor else _y2)
+            inf1_xyz = self._find_infinite_point(0.0, direction1)
+            inf2_xyz = self._find_infinite_point(0.0, direction2)
+        elif b1 == 0:
+            # Case3 (No overlap)
+            pass
+        else:
+            raise ValueError("Invalid case")
+        self._make_line_vertices(itsc_xyz, inf1_xyz, inf2_xyz)
+        self.line_on_sphere.set_data_3d(
+            self._sphere_xs, self._sphere_ys, self._zs
+        )
+
+    @staticmethod
+    def _get_axis_and_angle(xyz1, xyz2):
+        axis = np.cross(xyz1, xyz2)
+        if np.allclose(axis, 0.0):
+            axis = np.array([0.0, 0.0, -1.0])
+        else:
+            axis /= np.linalg.norm(axis)
+        angle = np.arccos(
+            np.dot(xyz1, xyz2) / (np.linalg.norm(xyz1) * np.linalg.norm(xyz2))
+        )
+        return axis, angle
+
+    @staticmethod
+    def _Rmat_from_axis_and_angle(u, rad):
+        """
+        - u: unit axis
+        - rad: angle
+        """
+        x, y, z = u
+        c = np.cos(rad)
+        s = np.sin(rad)
+        _1c = 1.0 - c
+        return np.array(
+            [
+                [c + (x ** 2) * _1c, x * y * _1c - z * s, x * z * _1c + y * s],
+                [y * x * _1c + z * s, c + (y ** 2) * _1c, y * z * _1c - x * s],
+                [z * x * _1c - y * s, z * y * _1c + x * s, c + (z ** 2) * _1c],
+            ]
+        )
+
+    def _put_xyz(self, index, xyz):
+        self._xs[index] = xyz[0]
+        self._ys[index] = xyz[1]
+        self._zs[index] = xyz[2]
+        return index + 1
+
+    def _interpolation(self, xyz1, xyz2, start_index):
+        """
+        - xyz1, xyz2: 3D coordinates
+        """
+        axis, rad = self._get_axis_and_angle(xyz1, xyz2)
+        Rmat = self._Rmat_from_axis_and_angle(axis, rad / self._n)
+        i = start_index
+        p = xyz1
+        for _ in range(self._n - 1):
+            p = np.dot(Rmat, p)
+            self._xs[i] = p[0]
+            self._ys[i] = p[1]
+            self._zs[i] = p[2]
+            i += 1
+        return i
+
+    def _make_line_vertices(self, intersection, infp1, infp2):
+        # infp1
+        # infp1 -> intersection
+        next_index = self._put_xyz(0, infp1)
+        next_index = self._interpolation(infp1, intersection, next_index)
+        # intersection
+        # intersection -> infp2
+        next_index = self._put_xyz(next_index, intersection)
+        next_index = self._interpolation(intersection, infp2, next_index)
+        # infp2
+        # infp2 -> infp1
+        next_index = self._put_xyz(next_index, infp2)
+        next_index = self._interpolation(infp2, infp1, next_index)
+        # infp1
+        self._put_xyz(next_index, infp1)
+        """
+        CCW plane: x = _y,  y = -_x
+        CW plane: x = -_y, y = _x
+        """
+        self._sphere_xs = self._ys * self.plus_if_ccw_else_minus
+        self._sphere_ys = self._xs * self.minus_if_ccw_else_plus
 
 
 class MouseLocationPatch:
