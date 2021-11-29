@@ -8,6 +8,7 @@ import numpy as np
 from logic import stable_region
 from visualization import plot_2d_elements as p2d
 from visualization import plot_3d_elements as p3d
+import sampling
 
 """
 CAUTION:
@@ -45,6 +46,10 @@ class PlotManager:
         self.is_cursor_locked = False
         self.elem_mouse3d = p3d.MouseLocationPatch(self.axR)
 
+        # ======= SAMPLERS =======
+        
+
+
         # Initial drawing
         self._close_update()
 
@@ -72,9 +77,9 @@ class PlotManager:
         cw_button.on_clicked(self._rotate_slider_cw)
 
         # ======= EVENTS =======
-        box = plt.axes([0.05, 0.03, 0.035, 0.04])
+        box = plt.axes([0.048, 0.03, 0.035, 0.04])
         box.set_axis_off()
-        box.text(0, 0.9, "Click in the left figure to (un)lock the cursor.")
+        box.text(0, 0.9, "*Click in the left figure to (un)lock the cursor.")
         self.cursor_lock_caution = box.text(
             0,
             0,
