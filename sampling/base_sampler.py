@@ -1,7 +1,12 @@
 from abc import *
 
 
-class Sampler(metaclass=ABCMeta):
+class BaseSampler(metaclass=ABCMeta):
     @abstractmethod
-    def sample(self, n):
+    def get_samples(self):
+        """
+        Return:
+            - next_poses [[x, y, heading], ...]
+            - ICRs [[x, y], ...]
+        """
         pass

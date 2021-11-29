@@ -294,3 +294,49 @@ class LineConstraintPair:
             self.intersection.set_xy(yx)
         else:
             self.intersection.set_xy([(0, 0)])
+
+
+class SamplesPatch:
+    def __init__(self, subplot, linewidth=1, linelength=0.25):
+        self.ax = subplot
+        self.arrow_width = linewidth
+        self.arrow_length = linelength
+        self.all_arrows = []
+
+    def _add_arrow(self, n):
+        """
+        n: number of new arrows
+        """
+        new_arrows = [
+            patches.FancyArrowPatch(
+                (0, 0), (0, 0), fill=False, color="black", linewidth=self.arrow_width
+            )
+            for _ in range(n)
+        ]
+        for arrow in new_arrows:
+            arrow.set_visible(False)
+            arrow.set_arrowstyle("-|>", head_length=4, head_width=2)
+            self.ax.add_patch(arrow)
+
+    def update(self, stable_mask, samples=None):
+        """
+        stable_mask: [True, False, ...]
+        samples: [[x, y, heading], ...]
+        """
+        req_n = len(stable_mask)
+        cur_n = len(self.all_arrows)
+        if cur_n < req_n:
+            self._add_arrow(req_n - cur_n)
+        elif cur_n > req_n:
+            for arrow in self.all_arrows[req_n:]:
+                arrow.set(visible=False)
+        # Update
+        for i in range(req_n):
+            self.all_arrows[i].set(
+                visible=True, color="blue" if stable_mask[i] else "red"
+            )
+            if samples is not None:
+                x, y, heading = samples[i]
+                dx = self.arrow_length * np.cos(heading)
+                dy = self.arrow_length * np.sin(heading)
+                self.all_arrows[i].set_positions((x, y), (x + dx, y + dy))

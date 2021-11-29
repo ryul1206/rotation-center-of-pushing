@@ -31,9 +31,11 @@ class PlotManager:
         ylim = (-interval * limit[1], interval * limit[1] * 1.1)
         self.axL = fig.add_subplot(gs[0])
         p2d.build_static_elements(self.axL, xlim, ylim, interval)
+
         self.elem_slider = p2d.SliderPatch(self.axL)
         self.elem_constraints = p2d.ConstraintsPatch(self.axL, xlim, ylim)
         self.elem_mouse2d = p2d.MouseLocationPatch(self.axL)
+        self.elem_samples = p2d.SamplesPatch(self.axL)
 
         # ======= RIGTH FIGURES =======
         self.initial_azim_elev = (30, 30)  # deg
@@ -45,10 +47,17 @@ class PlotManager:
         self.last_cursor_event_xy = (0, 0)
         self.is_cursor_locked = False
         self.elem_mouse3d = p3d.MouseLocationPatch(self.axR)
+        # self.elem_samples3d = p3d.SamplesPatch3D(self.axR)
 
         # ======= SAMPLERS =======
-        
-
+        self.current_sampler = 0
+        self.samplers = [
+            ("empty", sampling.EmptySampler()),
+            ("circle", sampling.CircleSampler(0.2)),
+            ("wedge", sampling.WedgeSampler(0.4)),
+        ]
+        self.last_samples = []
+        self.last_ICRs = []
 
         # Initial drawing
         self._close_update()
@@ -65,7 +74,7 @@ class PlotManager:
         self.friction_slider.on_changed(self._update_friction)
 
         box = plt.axes([0.4, 0.03, 0.07, 0.04])
-        reset_button = Button(box, "Reset All", hovercolor="0.95")
+        reset_button = Button(box, "Reset All", hovercolor="0.90")
         reset_button.on_clicked(self._reset)
 
         box = plt.axes([0.26, 0.03, 0.05, 0.04])
@@ -75,6 +84,13 @@ class PlotManager:
         box = plt.axes([0.32, 0.03, 0.05, 0.04])
         cw_button = Button(box, "CW >>", hovercolor="0.90")
         cw_button.on_clicked(self._rotate_slider_cw)
+
+        box = plt.axes([0.4, 0.03, 0.07, 0.04])
+        self.smplr_text = box.text(
+            0, 1.0, "Sampler: {}".format(self.samplers[self.current_sampler][0])
+        )
+        smplr_button = Button(box, "Change Sampler", hovercolor="0.90")
+        smplr_button.on_clicked(self._change_sampler)
 
         # ======= EVENTS =======
         box = plt.axes([0.048, 0.03, 0.035, 0.04])
@@ -89,6 +105,9 @@ class PlotManager:
             fontsize=20,
             fontweight="bold",
         )
+        # self.info = plt.axes([0.05, 0.03, 0.05, 0.04])
+        # self.cursor_text = self.info.text(0.0, 0.0, "15", fontsize=12)
+
         plt.connect("motion_notify_event", self._on_mouse_move)
         plt.connect("button_press_event", self._on_mouse_click)
         plt.tight_layout(rect=[0, 0.03, 1, 1.05])
@@ -102,12 +121,17 @@ class PlotManager:
             <class 'matplotlib.axes._subplots.Axes3DSubplot'>.
         """
         if isinstance(event.inaxes, self.axL.__class__):
+            cursor_xy = (event.xdata, event.ydata)
+            local_xy = (cursor_xy[1], cursor_xy[0])
+            is_stable = self.sr.is_stable_in_local_frame(local_xy)
+            msg = "xy({:.3f}, {:.3f}):{}".format(
+                local_xy[0], local_xy[1], "stable" if is_stable else "UNSTABLE"
+            )
+            print("Cursor {}".format(msg))
             if not self.is_cursor_locked:
-                self.last_cursor_event_xy = (event.xdata, event.ydata)
-                print(
-                    "Cursor (x: {:.3f}, y: {:.3f})".format(*self.last_cursor_event_xy)
-                )
+                self.last_cursor_event_xy = cursor_xy
                 self._update_last_cursor()
+                self.axL.redraw_in_frame()
                 plt.draw()
 
     def _on_mouse_click(self, event):
@@ -128,6 +152,16 @@ class PlotManager:
         self.sr.update_friction(mu)
         self._close_update()
 
+    def _update_stable_mask_of_samples(self):
+        """
+        `self.last_ICRs` and `self.last_samples` are updated
+        when you change the current sampler.
+        """
+        stable_mask = [self.sr.is_stable_in_local_frame(xy) for xy in self.last_ICRs]
+        self.elem_samples.update(self.last_samples, stable_mask)
+        # self.elem_samples3d.update(self.last_ICRs, stable_mask)
+        plt.draw()
+
     def _reset(self, event):
         self.axR.azim = self.initial_azim_elev[0]
         self.axR.elev = self.initial_azim_elev[1]
@@ -135,6 +169,12 @@ class PlotManager:
         self.sr.set_current_contact(0)
         self.sr.update_shape()
         self._close_update()
+
+    def _change_sampler(self, event):
+        self.current_sampler = (self.current_sampler + 1) % len(self.samplers)
+        self.smplr_text.set_text(
+            "Sampler: {}".format(self.samplers[self.current_sampler][0])
+        )
 
     def _rotate_slider_ccw(self, event):
         idx = self.sr.current_contact_idx
@@ -153,7 +193,9 @@ class PlotManager:
         self.elem_slider.update(self.sr)
         self.elem_constraints.update(self.sr)
         self.elem_constraints3d.update(self.sr)
+        # Update existing points
         self._update_last_cursor()
+        self._update_stable_mask_of_samples()
         plt.draw()
 
 

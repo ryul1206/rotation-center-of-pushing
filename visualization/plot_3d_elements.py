@@ -404,3 +404,12 @@ class MouseLocationPatch:
         self.cursor_dot.set(color=_c)
         self.cursor_dot_on_sphere.set(color=_c)
         self.cursor_line.set(color=_c)
+
+
+# class SamplesPatch3D:
+#     def __init__(self, subplot, dot_radius=0.015):
+#         self.ax = subplot
+#         self.dot_radius = dot_radius
+#         self.all_ICRs = []
+
+#     def _
