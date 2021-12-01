@@ -317,15 +317,19 @@ class MouseLocationPatch:
         )
         self.cursor_dot = art3d.Line3D(*self.dot_verts, linewidth=1.5)
         self.cursor_dot_on_sphere = art3d.Line3D(*self.dot_verts, linewidth=1.5)
-        subplot.add_line(self.cursor_dot)
-        subplot.add_line(self.cursor_dot_on_sphere)
-
         self.cursor_line = art3d.Line3D(
             (0, 0), (0, 0), (0, 0), linewidth=1.0, color="black"
         )  # xs, ys, zs
+        subplot.add_line(self.cursor_dot)
+        subplot.add_line(self.cursor_dot_on_sphere)
         subplot.add_line(self.cursor_line)
 
-    def update(self, event_xy, local_centroid, is_stable):
+    def visibility(self, visible):
+        self.cursor_line.set_visible(visible)
+        self.cursor_dot.set_visible(visible)
+        self.cursor_dot_on_sphere.set_visible(visible)
+
+    def update(self, event_xy, is_stable):
         """
         y_from_centroid > 0: Left-hand side (CCW, z-axis = +1)
         y_from_centroid < 0: Right-hand side (CW, z-axis = -1)

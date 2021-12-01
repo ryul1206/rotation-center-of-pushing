@@ -1,6 +1,7 @@
 import matplotlib
 import matplotlib.ticker as ticker
 import matplotlib.patches as patches
+from matplotlib.lines import Line2D
 import numpy as np
 import shapely.geometry as geom
 
@@ -68,21 +69,57 @@ def build_static_elements(ax, xlim=(-1, 1), ylim=(-1, 1), tick_interval=0.25):
 
 
 class MouseLocationPatch:
+    """
+    Reference:
+    https://github.com/matplotlib/matplotlib/blob/v3.5.0/lib/matplotlib/widgets.py#L1579-L1670
+    """
+
     def __init__(self, subplot):
         self.cursor = patches.Circle(
             (0, 0), radius=0.03, fill=False, edgecolor="gray", linewidth=2
         )
+        # Cross hair
+        self.crosshair_on = False
+        _lwidth = 0.7
+        _lstyle = (0, (3, 5))
+        self.lineh = Line2D(
+            (0, 0), subplot.get_ybound(), linewidth=_lwidth, linestyle=_lstyle
+        )
+        self.linev = Line2D(
+            subplot.get_xbound(), (0, 0), linewidth=_lwidth, linestyle=_lstyle
+        )
         subplot.add_patch(self.cursor)
+        subplot.add_line(self.lineh)
+        subplot.add_line(self.linev)
+        self.visibility(False)
 
-    def update(self, event_xy, sr):
+    def visibility(self, visible):
+        self.cursor.set_visible(visible)
+        self.lineh.set_visible(visible)
+        self.linev.set_visible(visible)
+
+    def update(self, event_xy, is_cursor_stable, is_cross_stable, is_cursor_locked):
         """
-        event_xy: (y, x) in local coordinates
-        sr: An instance of the stable_region.StableRegion class
+        :param event_xy: (x, y) in the figure frame
+        :param is_stable: bool
         """
-        self.cursor.center = event_xy
-        is_stable = sr.is_stable_in_local_frame((event_xy[1], event_xy[0]))
-        self.cursor.set(color="blue" if is_stable else "red")
-        return is_stable
+        if not is_cursor_locked:
+            self.cursor.center = event_xy
+        self.lineh.set_xdata((event_xy[0], event_xy[0]))
+        self.linev.set_ydata((event_xy[1], event_xy[1]))
+        self.visibility(True)
+        cs_color = "blue" if is_cursor_stable else "red"
+        cr_color = "blue" if is_cross_stable else "red"
+        self.cursor.set(color=cs_color)
+        self.lineh.set(color=cr_color)
+        self.linev.set(color=cr_color)
+
+    def remove_crosshair(self):
+        self.lineh.set_visible(False)
+        self.linev.set_visible(False)
+
+    def remove_cursor(self):
+        self.cursor.set_visible(False)
 
 
 class SliderPatch:
@@ -124,10 +161,10 @@ class AxesLine:
     def __init__(self, subplot, linewidth=3, linelength=0.1):
         self._xoy = np.array([[linelength, 0], [0, 0], [0, linelength]])  # x, origin, y
         x, o, y = self._xoy
-        self.xline = matplotlib.lines.Line2D(
+        self.xline = Line2D(
             (o[1], x[1]), (o[0], x[0]), color="red", linewidth=linewidth
         )
-        self.yline = matplotlib.lines.Line2D(
+        self.yline = Line2D(
             (o[1], y[1]), (o[0], y[0]), color="green", linewidth=linewidth
         )
         subplot.add_line(self.xline)
@@ -207,12 +244,8 @@ class LineConstraintPair:
 
         xs = (0, 0)
         ys = (0, 0)
-        self.L1 = matplotlib.lines.Line2D(
-            xs, ys, color=color, linewidth=linewidth, alpha=alpha * 2.0
-        )
-        self.L2 = matplotlib.lines.Line2D(
-            xs, ys, color=color, linewidth=linewidth, alpha=alpha * 2.0
-        )
+        self.L1 = Line2D(xs, ys, color=color, linewidth=linewidth, alpha=alpha * 2.0)
+        self.L2 = Line2D(xs, ys, color=color, linewidth=linewidth, alpha=alpha * 2.0)
         self.intersection = patches.Polygon(
             [xs], True, color=color, linewidth=None, alpha=alpha
         )

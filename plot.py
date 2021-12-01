@@ -1,14 +1,15 @@
 #!/usr/bin/python3
 import matplotlib.pyplot as plt
+from matplotlib import artist as martist
 from matplotlib.backend_bases import MouseButton
 from matplotlib.gridspec import GridSpec
-from matplotlib.widgets import Slider, Button
+from matplotlib.widgets import Slider, Button, AxesWidget
 import numpy as np
 
 from logic import stable_region
-from visualization import plot_2d_elements as p2d
-from visualization import plot_3d_elements as p3d
-import sampling
+from visualization import subplots
+
+# import sampling
 
 """
 CAUTION:
@@ -24,75 +25,52 @@ class PlotManager:
         fig.suptitle("Stable Region of Rotation Center for Pushing")
         gs = GridSpec(1, 2, width_ratios=[7, 5])
 
-        # ======= LEFT FIGURES =======
+        self.lastcursor_event_xy = (0, 0)
+        self.crosshair_event_xy = (0, 0)
+        self.is_cursor_locked = False
+
+        """
+        LEFT and RIGHT FIGURES
+        """
         interval = 1.0
         limit = (3, 2)
         xlim = (-interval * limit[0], interval * limit[0] * 1.1)
         ylim = (-interval * limit[1], interval * limit[1] * 1.1)
         self.axL = fig.add_subplot(gs[0])
-        p2d.build_static_elements(self.axL, xlim, ylim, interval)
-
-        self.elem_slider = p2d.SliderPatch(self.axL)
-        self.elem_constraints = p2d.ConstraintsPatch(self.axL, xlim, ylim)
-        self.elem_mouse2d = p2d.MouseLocationPatch(self.axL)
-        self.elem_samples = p2d.SamplesPatch(self.axL)
-
-        # ======= RIGTH FIGURES =======
-        self.initial_azim_elev = (30, 30)  # deg
         self.axR = fig.add_subplot(gs[1], projection="3d")
-        self.axR.azim = self.initial_azim_elev[0]
-        self.axR.elev = self.initial_azim_elev[1]
-        p3d.build_static_elements(self.axR)
-        self.elem_constraints3d = p3d.ConstraintsPatch3D(self.axR)
-        self.last_cursor_event_xy = (0, 0)
-        self.is_cursor_locked = False
-        self.elem_mouse3d = p3d.MouseLocationPatch(self.axR)
-        # self.elem_samples3d = p3d.SamplesPatch3D(self.axR)
 
-        # ======= SAMPLERS =======
-        self.current_sampler = 0
-        self.samplers = [
-            ("empty", sampling.EmptySampler()),
-            ("circle", sampling.CircleSampler(0.2)),
-            ("wedge", sampling.WedgeSampler(0.4)),
-        ]
-        self.last_samples = []
-        self.last_ICRs = []
+        self.left_plot = subplots.LeftPlot(self.axL, xlim, ylim, interval)
+        self.right_plot = subplots.RightPlot(self.axR, 30, 30)
 
         # Initial drawing
-        self._close_update()
+        self.left_plot.update_constraints(self.sr)
+        self.right_plot.update_constraints(self.sr)
+        plt.draw()
 
-        # ======= WIDGETS =======
-        # ax = plt.axes([left, bottom, width, height])
-        self.friction_slider = Slider(
-            ax=plt.axes([0.2, 0.09, 0.3, 0.04]),
+        """
+        WIDGETS
+        """
+        self.widget_friction = Slider(
+            ax=plt.axes([0.2, 0.09, 0.3, 0.04]),  # [left, bottom, width, height]
             label=r"Input $\alpha$ [deg] (Friction $\mu=\tan(\alpha)$)",
             valmin=0.0,
             valmax=90.0,
             valinit=np.degrees(np.arctan(self.sr.mu)),
         )
-        self.friction_slider.on_changed(self._update_friction)
+        self.widget_friction.on_changed(self._update_friction)
 
         box = plt.axes([0.4, 0.03, 0.07, 0.04])
-        reset_button = Button(box, "Reset All", hovercolor="0.90")
-        reset_button.on_clicked(self._reset)
+        bt0 = Button(box, "Reset All", hovercolor="0.9")
+        bt0.on_clicked(self._reset)
 
         box = plt.axes([0.26, 0.03, 0.05, 0.04])
-        ccw_button = Button(box, "<< CCW", hovercolor="0.90")
-        ccw_button.on_clicked(self._rotate_slider_ccw)
+        bt1 = Button(box, "<< CCW", hovercolor="0.9")
+        bt1.on_clicked(self._rotate_slider_ccw)
 
         box = plt.axes([0.32, 0.03, 0.05, 0.04])
-        cw_button = Button(box, "CW >>", hovercolor="0.90")
-        cw_button.on_clicked(self._rotate_slider_cw)
+        bt2 = Button(box, "CW >>", hovercolor="0.9")
+        bt2.on_clicked(self._rotate_slider_cw)
 
-        box = plt.axes([0.4, 0.03, 0.07, 0.04])
-        self.smplr_text = box.text(
-            0, 1.0, "Sampler: {}".format(self.samplers[self.current_sampler][0])
-        )
-        smplr_button = Button(box, "Change Sampler", hovercolor="0.90")
-        smplr_button.on_clicked(self._change_sampler)
-
-        # ======= EVENTS =======
         box = plt.axes([0.048, 0.03, 0.035, 0.04])
         box.set_axis_off()
         box.text(0, 0.9, "*Click in the left figure to (un)lock the cursor.")
@@ -108,10 +86,43 @@ class PlotManager:
         # self.info = plt.axes([0.05, 0.03, 0.05, 0.04])
         # self.cursor_text = self.info.text(0.0, 0.0, "15", fontsize=12)
 
+        # _ = Cursor(self.axL, useblit=True, color="red", linewidth=1)
+        # _ = custom.CustomCursor(
+        #     self.axL, self._on_mouse_move, useblit=True, color="red", linewidth=1
+        # )
+        # _ = custom.CustomCursor3D(self.axR, self._on_mouse_move, useblit=True)
+
+        """
+        EVENTS with blit
+        """
         plt.connect("motion_notify_event", self._on_mouse_move)
+        plt.connect("draw_event", self._on_clear)
         plt.connect("button_press_event", self._on_mouse_click)
+
         plt.tight_layout(rect=[0, 0.03, 1, 1.05])
         plt.show()
+
+    def _on_clear(self, event):
+        """Internal event handler to clear all"""
+        self.left_plot.on_clear(event)
+        self.right_plot.on_clear(event)
+
+    def _update_cursor(self):
+        is_cursor_stable = self.sr.is_stable_in_local_frame(
+            (self.lastcursor_event_xy[1], self.lastcursor_event_xy[0])
+        )
+        is_cross_stable = self.sr.is_stable_in_local_frame(
+            (self.crosshair_event_xy[1], self.crosshair_event_xy[0])
+        )
+        self.left_plot.update_cursor(
+            self.crosshair_event_xy,
+            is_cursor_stable,
+            is_cross_stable,
+            self.is_cursor_locked,
+        )
+        self.right_plot.update_cursor(
+            self.lastcursor_event_xy, is_cursor_stable, self.is_cursor_locked
+        )
 
     def _on_mouse_move(self, event):
         """
@@ -120,7 +131,11 @@ class PlotManager:
         When your mouse is on the right figure, event.inaxes is
             <class 'matplotlib.axes._subplots.Axes3DSubplot'>.
         """
-        if isinstance(event.inaxes, self.axL.__class__):
+        if (not self.left_plot.widgetlock_available) or (
+            not self.right_plot.widgetlock_available
+        ):
+            return
+        if event.inaxes == self.axL:
             cursor_xy = (event.xdata, event.ydata)
             local_xy = (cursor_xy[1], cursor_xy[0])
             is_stable = self.sr.is_stable_in_local_frame(local_xy)
@@ -128,80 +143,64 @@ class PlotManager:
                 local_xy[0], local_xy[1], "stable" if is_stable else "UNSTABLE"
             )
             print("Cursor {}".format(msg))
+            self.crosshair_event_xy = cursor_xy
             if not self.is_cursor_locked:
-                self.last_cursor_event_xy = cursor_xy
-                self._update_last_cursor()
-                self.axL.redraw_in_frame()
-                plt.draw()
+                self.lastcursor_event_xy = cursor_xy
+            self._update_cursor()
+        else:
+            self._update_cursor()
+            self.left_plot.remove_crosshair()
+        self._update_blit()
+
+    def _update_blit(self):
+        self.left_plot.blit_draw()
+        self.right_plot.blit_draw()
 
     def _on_mouse_click(self, event):
         if isinstance(event.inaxes, self.axL.__class__):
             if event.button is MouseButton.LEFT:
-                self.is_cursor_locked = not self.is_cursor_locked
-                self.cursor_lock_caution.set_visible(self.is_cursor_locked)
-                plt.draw()
+                self._cursor_lock()
+        self._close_update()
 
-    def _update_last_cursor(self):
-        is_stable = self.elem_mouse2d.update(self.last_cursor_event_xy, self.sr)
-        self.elem_mouse3d.update(
-            self.last_cursor_event_xy, self.sr.local_centroid, is_stable
-        )
+    def _cursor_lock(self, value=None):
+        if value is None:
+            self.is_cursor_locked = not self.is_cursor_locked
+        else:
+            self.is_cursor_locked = value
+        self.cursor_lock_caution.set_visible(self.is_cursor_locked)
 
     def _update_friction(self, val):
-        mu = np.tan(np.radians(self.friction_slider.val))
+        mu = np.tan(np.radians(self.widget_friction.val))
         self.sr.update_friction(mu)
         self._close_update()
 
-    def _update_stable_mask_of_samples(self):
-        """
-        `self.last_ICRs` and `self.last_samples` are updated
-        when you change the current sampler.
-        """
-        stable_mask = [self.sr.is_stable_in_local_frame(xy) for xy in self.last_ICRs]
-        self.elem_samples.update(self.last_samples, stable_mask)
-        # self.elem_samples3d.update(self.last_ICRs, stable_mask)
-        plt.draw()
-
     def _reset(self, event):
-        self.axR.azim = self.initial_azim_elev[0]
-        self.axR.elev = self.initial_azim_elev[1]
-        self.friction_slider.reset()
+        self._cursor_lock(value=False)
+        self.crosshair_event_xy = (0, 0)
+        self.lastcursor_event_xy = (0, 0)
         self.sr.set_current_contact(0)
-        self.sr.update_shape()
+        self.widget_friction.reset()
+        self.right_plot.reset_view()
+        self._update_blit()
         self._close_update()
 
-    def _change_sampler(self, event):
-        self.current_sampler = (self.current_sampler + 1) % len(self.samplers)
-        self.smplr_text.set_text(
-            "Sampler: {}".format(self.samplers[self.current_sampler][0])
-        )
-
     def _rotate_slider_ccw(self, event):
-        idx = self.sr.current_contact_idx
-        self.sr.set_current_contact(idx + 1)
-        self.sr.update_shape()
+        self.sr.set_current_contact(self.sr.current_contact_idx + 1)
         self._close_update()
 
     def _rotate_slider_cw(self, event):
-        idx = self.sr.current_contact_idx
-        self.sr.set_current_contact(idx - 1)
-        self.sr.update_shape()
+        self.sr.set_current_contact(self.sr.current_contact_idx - 1)
         self._close_update()
 
     def _close_update(self):
-        """No logic HERE! Only drawing"""
-        self.elem_slider.update(self.sr)
-        self.elem_constraints.update(self.sr)
-        self.elem_constraints3d.update(self.sr)
-        # Update existing points
-        self._update_last_cursor()
-        self._update_stable_mask_of_samples()
+        self.left_plot.cursor_visiblity(False)
+        self.right_plot.cursor_visiblity(False)
+        self.left_plot.update_constraints(self.sr)
+        self.right_plot.update_constraints(self.sr)
         plt.draw()
 
 
 if __name__ == "__main__":
-    sr = stable_region.StableRegion(default_mu=0.5)
-
     input_points = [
         (-0.1, -0.1),
         (-0.12, 0.1),
@@ -213,6 +212,7 @@ if __name__ == "__main__":
     # If points are in clockwise order, pusher will head opposite direction (from inside).
     # input_points.reverse()
     slider = np.array(input_points)
-    sr.init_slider(slider)
+
+    sr = stable_region.StableRegion(slider, default_mu=0.5)
 
     p = PlotManager(sr)

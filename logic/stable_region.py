@@ -10,7 +10,7 @@ def unit(rad):
 class StableRegion:
     HALF_PI = np.pi / 2.0
 
-    def __init__(self, default_mu=0.5):
+    def __init__(self, xy_points_in_clockwise, default_mu=0.5):
         # Input coordinates
         self._xy_points = None
         self._line_contact_cases = None
@@ -32,14 +32,41 @@ class StableRegion:
         self._local_rsupport = None  # xy
 
         # Stable conditions
-        self._cond_FL1 = None
-        self._cond_FL2 = None
-        self._cond_FR1 = None
-        self._cond_FR2 = None
-        self._cond_WL1 = None
-        self._cond_WL2 = None
-        self._cond_WR1 = None
-        self._cond_WR2 = None
+        """
+        Reference: Page 159 of "Mechanics of robotic mnaipulation"
+        (M. T. Mason, Mechanics of robotic manipulation. Cambridge, Mass: MIT Press, 2001.)
+        """
+        """
+        # 1: Friction cone condition (mu & shape dependent)
+        -------------------------------------------------
+        Left-hand ICR is stable if:
+            y>= left cone의 -alpha (x=상수꼴이면 queryX<=x)
+            y>= right cone의 alpha + 떨어진점 (x=상수꼴이면 queryX>=x)
+        Right-hand ICR is stable if:
+            y<= left cone의 -alpha + 떨어진점 (x=상수꼴이면 queryX>=x)
+            y<= right cone의 alpha (x=상수꼴이면 queryX<=x)
+        """
+        self._cond_FL1 = LineConstraint(greater_than_y=True, greater_than_x=False)
+        self._cond_FL2 = LineConstraint(greater_than_y=True, greater_than_x=True)
+        self._cond_FR1 = LineConstraint(greater_than_y=False, greater_than_x=True)
+        self._cond_FR2 = LineConstraint(greater_than_y=False, greater_than_x=False)
+
+        """
+        # 2: Wrench condition (= Non-prehensile condition)) (shape dependent)
+        -------------------------------------------------
+        (r: centroid에서 가장 먼 cone까지의 거리, p: centroid에서 현재 cone까지의 거리)
+        Left-hand ICR is stable if:
+            y>= left cone과 centroid 사이의 수직이등분선 (x=상수꼴이면 queryX<=x)
+            y>= `(현재)right cone->centroid`방향, centroid에서 r^2/p 거리 (x=상수꼴이면 queryX>=x)
+        Right-hand ICR is stable if:
+            y<= `(현재)left cone->centroid`방향, centroid에서 r^2/p 거리 (x=상수꼴이면 queryX>=x)
+            y<= right cone과 centroid 사이의 수직이등분선 (x=상수꼴이면 queryX<=x)
+        """
+        self._cond_WL1 = LineConstraint(greater_than_y=True, greater_than_x=False)
+        self._cond_WL2 = LineConstraint(greater_than_y=True, greater_than_x=True)
+        self._cond_WR1 = LineConstraint(greater_than_y=False, greater_than_x=True)
+        self._cond_WR2 = LineConstraint(greater_than_y=False, greater_than_x=False)
+        self.init_slider(xy_points_in_clockwise)
 
     @property
     def line_contact_cases(self):
@@ -105,9 +132,6 @@ class StableRegion:
         self._line_contact_cases = len(self._xy_points)
         self.set_current_contact(0)
 
-        # Stable conditions
-        self._init_stable_conditions()
-
     def set_current_contact(self, contact_index):
         def valid(idx):
             return idx % self._line_contact_cases
@@ -135,6 +159,12 @@ class StableRegion:
         self._local_lsupport = TmatDot(self._local_input_T, input_lsupport)
         self._local_rsupport = TmatDot(self._local_input_T, input_rsupport)
 
+        # UPDATE CONSTRAINTS ##########################
+        # 1: Friction cone condition (mu & shape dependent)
+        self.update_friction_cone_stable()
+        # # 2: Wrench condition (= Non-prehensile condition)) (shape dependent)
+        self.update_wrench_stable()
+
         return self._current_contact
 
     def update_friction(self, mu):
@@ -142,11 +172,9 @@ class StableRegion:
         mu: friction coefficient (mu = tan(alpha))
         """
         self._mu = mu
+        # UPDATE CONSTRAINTS ##########################
+        # 1: Friction cone condition (mu & shape dependent)
         self.update_friction_cone_stable()
-
-    def update_shape(self):
-        self.update_friction_cone_stable()
-        self.update_wrench_stable()
 
     def is_stable_in_local_frame(self, local_xy):
         if local_xy[1] < 0.0:  # Right-hand ICR
@@ -165,44 +193,6 @@ class StableRegion:
             )
         is_stable = all(conditions)
         return is_stable
-
-    def _init_stable_conditions(self):
-        """
-        Reference: Page 159 of "Mechanics of robotic mnaipulation"
-        (M. T. Mason, Mechanics of robotic manipulation. Cambridge, Mass: MIT Press, 2001.)
-        """
-        """
-        # 1: Friction cone condition (mu & shape dependent)
-        -------------------------------------------------
-        Left-hand ICR is stable if:
-            y>= left cone의 -alpha (x=상수꼴이면 queryX<=x)
-            y>= right cone의 alpha + 떨어진점 (x=상수꼴이면 queryX>=x)
-        Right-hand ICR is stable if:
-            y<= left cone의 -alpha + 떨어진점 (x=상수꼴이면 queryX>=x)
-            y<= right cone의 alpha (x=상수꼴이면 queryX<=x)
-        """
-        self._cond_FL1 = LineConstraint(greater_than_y=True, greater_than_x=False)
-        self._cond_FL2 = LineConstraint(greater_than_y=True, greater_than_x=True)
-        self._cond_FR1 = LineConstraint(greater_than_y=False, greater_than_x=True)
-        self._cond_FR2 = LineConstraint(greater_than_y=False, greater_than_x=False)
-        self.update_friction_cone_stable()
-
-        """
-        # 2: Wrench condition (= Non-prehensile condition)) (shape dependent)
-        -------------------------------------------------
-        (r: centroid에서 가장 먼 cone까지의 거리, p: centroid에서 현재 cone까지의 거리)
-        Left-hand ICR is stable if:
-            y>= left cone과 centroid 사이의 수직이등분선 (x=상수꼴이면 queryX<=x)
-            y>= `(현재)right cone->centroid`방향, centroid에서 r^2/p 거리 (x=상수꼴이면 queryX>=x)
-        Right-hand ICR is stable if:
-            y<= `(현재)left cone->centroid`방향, centroid에서 r^2/p 거리 (x=상수꼴이면 queryX>=x)
-            y<= right cone과 centroid 사이의 수직이등분선 (x=상수꼴이면 queryX<=x)
-        """
-        self._cond_WL1 = LineConstraint(greater_than_y=True, greater_than_x=False)
-        self._cond_WL2 = LineConstraint(greater_than_y=True, greater_than_x=True)
-        self._cond_WR1 = LineConstraint(greater_than_y=False, greater_than_x=True)
-        self._cond_WR2 = LineConstraint(greater_than_y=False, greater_than_x=False)
-        self.update_wrench_stable()
 
     def update_friction_cone_stable(self):
         # Friction cone slope: m = tan(alpha) = friction coefficient mu
