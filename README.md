@@ -1,5 +1,7 @@
 # Rotation Center of Stable Pushing with Line Contact
 
+![example](./example.png)
+
 ### Dependancies
 
 - Stable region algorithm (py2, py3)
