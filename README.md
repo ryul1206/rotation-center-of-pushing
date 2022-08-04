@@ -14,7 +14,7 @@ pip3 install -r requirements.txt
 
 - Stable region algorithm (py2, py3)
   - numpy
-- Interactive Visualization (py3 only)
+- Interactive Visualization **(py3 only)**
   - numpy
   - matplotlib>=3.1.1
   - shapely

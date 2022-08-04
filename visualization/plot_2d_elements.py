@@ -1,6 +1,7 @@
 import matplotlib
 import matplotlib.ticker as ticker
 import matplotlib.patches as patches
+from matplotlib.lines import Line2D
 import numpy as np
 import shapely.geometry as geom
 
@@ -68,21 +69,57 @@ def build_static_elements(ax, xlim=(-1, 1), ylim=(-1, 1), tick_interval=0.25):
 
 
 class MouseLocationPatch:
+    """
+    Reference:
+    https://github.com/matplotlib/matplotlib/blob/v3.5.0/lib/matplotlib/widgets.py#L1579-L1670
+    """
+
     def __init__(self, subplot):
         self.cursor = patches.Circle(
             (0, 0), radius=0.03, fill=False, edgecolor="gray", linewidth=2
         )
+        # Cross hair
+        self.crosshair_on = False
+        _lwidth = 0.7
+        _lstyle = (0, (3, 5))
+        self.lineh = Line2D(
+            (0, 0), subplot.get_ybound(), linewidth=_lwidth, linestyle=_lstyle
+        )
+        self.linev = Line2D(
+            subplot.get_xbound(), (0, 0), linewidth=_lwidth, linestyle=_lstyle
+        )
         subplot.add_patch(self.cursor)
+        subplot.add_line(self.lineh)
+        subplot.add_line(self.linev)
+        self.visibility(False)
 
-    def update(self, event_xy, sr):
+    def visibility(self, visible):
+        self.cursor.set_visible(visible)
+        self.lineh.set_visible(visible)
+        self.linev.set_visible(visible)
+
+    def update(self, event_xy, is_cursor_stable, is_cross_stable, is_cursor_locked):
         """
-        event_xy: (y, x) in local coordinates
-        sr: An instance of the stable_region.StableRegion class
+        :param event_xy: (x, y) in the figure frame
+        :param is_stable: bool
         """
-        self.cursor.center = event_xy
-        is_stable = sr.is_stable_in_local_frame((event_xy[1], event_xy[0]))
-        self.cursor.set(color="blue" if is_stable else "red")
-        return is_stable
+        if not is_cursor_locked:
+            self.cursor.center = event_xy
+        self.lineh.set_xdata((event_xy[0], event_xy[0]))
+        self.linev.set_ydata((event_xy[1], event_xy[1]))
+        self.visibility(True)
+        cs_color = "blue" if is_cursor_stable else "red"
+        cr_color = "blue" if is_cross_stable else "red"
+        self.cursor.set(color=cs_color)
+        self.lineh.set(color=cr_color)
+        self.linev.set(color=cr_color)
+
+    def remove_crosshair(self):
+        self.lineh.set_visible(False)
+        self.linev.set_visible(False)
+
+    def remove_cursor(self):
+        self.cursor.set_visible(False)
 
 
 class SliderPatch:
@@ -124,10 +161,10 @@ class AxesLine:
     def __init__(self, subplot, linewidth=3, linelength=0.1):
         self._xoy = np.array([[linelength, 0], [0, 0], [0, linelength]])  # x, origin, y
         x, o, y = self._xoy
-        self.xline = matplotlib.lines.Line2D(
+        self.xline = Line2D(
             (o[1], x[1]), (o[0], x[0]), color="red", linewidth=linewidth
         )
-        self.yline = matplotlib.lines.Line2D(
+        self.yline = Line2D(
             (o[1], y[1]), (o[0], y[0]), color="green", linewidth=linewidth
         )
         subplot.add_line(self.xline)
@@ -207,12 +244,8 @@ class LineConstraintPair:
 
         xs = (0, 0)
         ys = (0, 0)
-        self.L1 = matplotlib.lines.Line2D(
-            xs, ys, color=color, linewidth=linewidth, alpha=alpha * 2.0
-        )
-        self.L2 = matplotlib.lines.Line2D(
-            xs, ys, color=color, linewidth=linewidth, alpha=alpha * 2.0
-        )
+        self.L1 = Line2D(xs, ys, color=color, linewidth=linewidth, alpha=alpha * 2.0)
+        self.L2 = Line2D(xs, ys, color=color, linewidth=linewidth, alpha=alpha * 2.0)
         self.intersection = patches.Polygon(
             [xs], True, color=color, linewidth=None, alpha=alpha
         )
@@ -294,3 +327,49 @@ class LineConstraintPair:
             self.intersection.set_xy(yx)
         else:
             self.intersection.set_xy([(0, 0)])
+
+
+class SamplesPatch:
+    def __init__(self, subplot, linewidth=1, linelength=0.25):
+        self.ax = subplot
+        self.arrow_width = linewidth
+        self.arrow_length = linelength
+        self.all_arrows = []
+
+    def _add_arrow(self, n):
+        """
+        n: number of new arrows
+        """
+        new_arrows = [
+            patches.FancyArrowPatch(
+                (0, 0), (0, 0), fill=False, color="black", linewidth=self.arrow_width
+            )
+            for _ in range(n)
+        ]
+        for arrow in new_arrows:
+            arrow.set_visible(False)
+            arrow.set_arrowstyle("-|>", head_length=4, head_width=2)
+            self.ax.add_patch(arrow)
+
+    def update(self, stable_mask, samples=None):
+        """
+        stable_mask: [True, False, ...]
+        samples: [[x, y, heading], ...]
+        """
+        req_n = len(stable_mask)
+        cur_n = len(self.all_arrows)
+        if cur_n < req_n:
+            self._add_arrow(req_n - cur_n)
+        elif cur_n > req_n:
+            for arrow in self.all_arrows[req_n:]:
+                arrow.set(visible=False)
+        # Update
+        for i in range(req_n):
+            self.all_arrows[i].set(
+                visible=True, color="blue" if stable_mask[i] else "red"
+            )
+            if samples is not None:
+                x, y, heading = samples[i]
+                dx = self.arrow_length * np.cos(heading)
+                dy = self.arrow_length * np.sin(heading)
+                self.all_arrows[i].set_positions((x, y), (x + dx, y + dy))
