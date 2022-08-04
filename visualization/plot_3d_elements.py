@@ -75,7 +75,7 @@ def build_static_elements(ax):
         (_a, _b, 1),
         (_a, _a, 1),
     )
-    plane1 = art3d.Poly3DCollection(top, linewidth=0.0)
+    plane1 = art3d.Poly3DCollection([top], linewidth=0.0)
     plane1.set_facecolor(_color)
     ax.add_collection3d(plane1)
     ax.plot([0, 0], [0, -_axes_length], [1, 1], color="red", linewidth=_axes_width)
@@ -90,7 +90,7 @@ def build_static_elements(ax):
         (_a, _b, -1),
         (_a, _a, -1),
     )
-    plane2 = art3d.Poly3DCollection(bot, linewidth=0.0)
+    plane2 = art3d.Poly3DCollection([bot], linewidth=0.0)
     plane2.set_facecolor(_color)
     ax.add_collection3d(plane2)
     ax.plot([0, 0], [0, _axes_length], [-1, -1], color="red", linewidth=_axes_width)
