@@ -385,9 +385,9 @@ class MouseLocationPatch:
             cb = np.cos(elevation)
             sb = np.sin(elevation)
             return np.array(
-                [[ca * cb, -sa, ca * sb], [sa * cb, ca, sa * sb], [-sb, 0, cb]],
+                [[ca * cb, -sa, ca * sb], [sa * cb, ca, sa * sb], [-sb, np.array([0]), cb]],
                 dtype=np.float32,
-            )
+            ).squeeze()
 
         point_on_sphere = (
             np.dot(RzRy(azimuth, HALF_PI - elevation), self.dot_verts) + xyz_on_sphere
